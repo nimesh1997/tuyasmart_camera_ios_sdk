@@ -9,6 +9,7 @@
 #import "TuyaSmartCamera.h"
 #import <TuyaSmartDeviceKit/TuyaSmartDeviceKit.h>
 #import "TuyaSmartCameraService.h"
+#import <TuyaSmartCameraM/TuyaSmartCameraM.h>
 
 #define kTuyaSmartIPCConfigAPI @"tuya.m.rtc.session.init"
 #define kTuyaSmartIPCConfigAPIVersion @"1.0"
@@ -85,11 +86,12 @@
         _dpManager = [[TuyaSmartCameraDPManager alloc] initWithDeviceId:devId];
         _observers = [NSPointerArray weakObjectsPointerArray];
         _callbacks = [NSMutableDictionary new];
-        
+        _camera = [TuyaSmartCameraFactory cameraWithP2PType:@(_device.deviceModel.p2pType) deviceId:_device.deviceModel.devId delegate:self];
         _muteForPreview = YES;
         _muteForPlayback = YES;
         
         _videoViewContainer = [[_TuyaSmartVideoView alloc] initWithFrame:CGRectZero];
+        _videoViewContainer.renderView = _camera.videoView;
         // 默认两路码流
         _videoNum = 2;
         
@@ -154,31 +156,15 @@
     }
     _connecting = YES;
     _callbacks[kCallBackKeyConnect] = [_TuyaSmartCallback callbackWithSuccess:success failure:failure];
-//    if (self.camera) {
-//        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-//            [self.camera connect];
-//        });
-//    }else {
-        __weak typeof(self) weakself = self;
-        [self createCamera:^(NSError *error) {
-            __strong typeof(weakself) self = weakself;
-            if (error) {
-                self.connecting = NO;
-                [self _taskFailureWithKey:kCallBackKeyConnect error:error];
-            }else {
-                [self.camera connect];
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    self.videoViewContainer.renderView = self.camera.videoView;
-                });
-            }
-        }];
-//    }
+    [self.camera connectWithMode:TuyaSmartCameraConnectAuto];
 }
 
 - (void)disConnect {
     [self stopPreview];
     [self stopPlayback];
     [self.camera disConnect];
+    self.connected = NO;
+    self.connecting = NO;
 }
 
 - (void)startPreview:(IPCVoidBlock)success failure:(IPCErrorBlock)failure {
@@ -353,26 +339,6 @@
     return [cachePath stringByAppendingPathComponent:fileName];
 }
 
-- (void)createCamera:(IPCErrorBlock)complete {
-    __weak typeof(self) weakself = self;
-    id p2pType = [self.device.deviceModel.skills objectForKey:@"p2pType"];
-    TuyaSmartRequest *request = [TuyaSmartRequest new];
-    [request requestWithApiName:kTuyaSmartIPCConfigAPI postData:@{@"devId": self.devId} version:kTuyaSmartIPCConfigAPIVersion success:^(id result) {
-        __strong typeof(weakself) self = weakself;
-        [self handleVideoNumberWithResult:result];
-        [self audioAttributesMap:[result objectForKey:@"audioAttributes"]];
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            TuyaSmartCameraConfig *config = [TuyaSmartCameraFactory ipcConfigWithUid:[TuyaSmartUser sharedInstance].uid localKey:self.device.deviceModel.localKey configData:result];
-            config.traceId = @"";
-            self.camera = [TuyaSmartCameraFactory cameraWithP2PType:p2pType config:config delegate:self];
-            !complete?:complete(nil);
-        });
-        
-    } failure:^(NSError *error) {
-        !complete?:complete(error);
-    }];
-}
-
 - (void)audioAttributesMap:(NSDictionary *)attributes {
     __block BOOL supportSound = NO;
     __block BOOL supportTalk = NO;
@@ -447,6 +413,9 @@
     _connecting = NO;
     _connected = YES;
     [self _taskSuccessWithKey:kCallBackKeyConnect];
+    NSDictionary *config = [TuyaSmartP2pConfigService getCachedConfigWithDeviceModel:self.device.deviceModel];
+    [self handleVideoNumberWithResult:config];
+    [self audioAttributesMap:[config objectForKey:@"audioAttributes"]];
 }
 
 - (void)cameraDisconnected:(id<TuyaSmartCameraType>)camera {

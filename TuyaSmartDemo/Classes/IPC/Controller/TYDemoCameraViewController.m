@@ -178,7 +178,7 @@
 }
 
 - (BOOL)isDoorbell {
-    return [self.camera.dpManager isSupportDP:TuyaSmartCameraWirelessAwakeDPName];
+    return self.camera.device.deviceModel.isLowPowerDevice;
 }
 
 - (void)startPreview {

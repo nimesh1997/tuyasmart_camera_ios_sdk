@@ -14,5 +14,6 @@ target 'TuyaCameraDemo' do
   	'IPC']
   pod 'TuyaCameraUIKit'
   pod 'TuyaSmartCloudServiceBizBundle'
+  pod 'TuyaSmartLogger'
   
 end
